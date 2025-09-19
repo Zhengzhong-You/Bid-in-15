@@ -1,0 +1,38 @@
+now:
+
+
+
+
+
+
+
+
+History:
+
+
+-----------
+
+Change for qwen_controller.py.
+
+1. Plz now bid in 6 min not 5, 
+2. Cfg now in 1-6. 
+
+
+And now only focus on the scip solver thx.
+
+
+This is a pipeline, but now somehting can be consistently changed, so plz move some consistently changed content out, u can make ur implemented codes as a python package, 
+
+The changed part is
+
+The prompts, 
+
+And 
+
+How the information of logs should be processed since the logs are too long I cannot pass them all into the conversation, but only some snippets..
+
+So the codes for dealing with this should be placed into a py code, while others should be kept in other py files, plz do not make them too long, but use different files and make them a fixed python package, one file do thing, plz stick to this rule, thx.
+
+
+
+

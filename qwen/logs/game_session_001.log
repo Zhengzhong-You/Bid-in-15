@@ -1,0 +1,8 @@
+[2025-09-18 10:30:15] INFO: Game session started - Player 1 joined
+[2025-09-18 10:30:22] INFO: Player 1 placed bid: 0
+[2025-09-18 10:30:45] INFO: Player 2 joined game
+[2025-09-18 10:30:52] INFO: Player 2 placed bid: 5
+[2025-09-18 10:31:10] INFO: Bid round 1 completed
+[2025-09-18 10:31:15] INFO: Player 1 placed bid: 00
+[2025-09-18 10:31:30] ERROR: Connection timeout for Player 2
+[2025-09-18 10:31:35] INFO: Game ended - Winner: Player 1
