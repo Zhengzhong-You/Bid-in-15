@@ -6,6 +6,7 @@ Model wrapper for Qwen SCIP solver parameter tuning.
 
 from dataclasses import dataclass
 from typing import List, Dict
+import os
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
@@ -25,44 +26,72 @@ class QwenRunner:
 
     def __init__(self, cfg: ModelConfig):
         self.cfg = cfg
+        
+        # Set HuggingFace cache directory explicitly
+        os.environ["HF_HOME"] = "/root/.cache/huggingface"
+        os.environ["TRANSFORMERS_CACHE"] = "/root/.cache/huggingface"
+        
+        # Load tokenizer
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 cfg.model_id, trust_remote_code=True, use_fast=True
             )
-        except ValueError as e:
-            if "Qwen2Tokenizer" in str(e):
-                # Fallback for older transformers versions
-                print("Warning: Using fallback tokenizer loading...")
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    cfg.model_id, trust_remote_code=True, use_fast=False, revision="main"
-                )
-            else:
-                raise e
+        except (ValueError, ImportError) as e:
+            # Fallback for older transformers versions or tokenizer issues
+            print(f"Warning: Using fallback tokenizer loading due to: {e}")
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                cfg.model_id, trust_remote_code=True, use_fast=False
+            )
 
+        # Set up quantization
         bnb_config = None
         torch_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
 
         if cfg.four_bit:
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch_dtype,
-            )
+            try:
+                # Check if bitsandbytes is available
+                import bitsandbytes
+                print(f"Using bitsandbytes version: {bitsandbytes.__version__}")
+                
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch_dtype,
+                )
+            except ImportError:
+                print("Warning: bitsandbytes not available, loading model in full precision")
+                cfg.four_bit = False
 
-        self.model = AutoModelForCausalLM.from_pretrained(
-            cfg.model_id,
-            device_map="auto",
-            torch_dtype=torch_dtype,
-            quantization_config=bnb_config,
-            trust_remote_code=True,
-        )
+        # Load model
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                cfg.model_id,
+                device_map="auto",
+                torch_dtype=torch_dtype,
+                quantization_config=bnb_config,
+                trust_remote_code=True,
+            )
+        except Exception as e:
+            print(f"Error loading model with quantization: {e}")
+            print("Falling back to full precision...")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                cfg.model_id,
+                device_map="auto",
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+            )
 
     def chat(self, messages: List[Dict[str, str]]) -> str:
         """Generate response from chat messages."""
-        chat_text = self.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
+        try:
+            chat_text = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        except Exception as e:
+            print(f"Warning: Chat template failed ({e}), using simple concatenation")
+            chat_text = "\n".join([f"{m['role']}: {m['content']}" for m in messages]) + "\nassistant: "
+        
         inputs = self.tokenizer(chat_text, return_tensors="pt").to(self.model.device)
 
         gen_kwargs = dict(
@@ -76,4 +105,6 @@ class QwenRunner:
         with torch.inference_mode():
             out = self.model.generate(**inputs, **gen_kwargs)
 
-        return self.tokenizer.decode(out[0], skip_special_tokens=True)
+        # Extract only the new tokens (response)
+        response_tokens = out[0][inputs['input_ids'].shape[-1]:]
+        return self.tokenizer.decode(response_tokens, skip_special_tokens=True)
